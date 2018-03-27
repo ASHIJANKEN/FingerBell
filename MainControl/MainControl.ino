@@ -146,8 +146,49 @@ void setTimer(){
   }
 }
 
+void startTimer(){
+  int duration = 0;
+  int old_btn_state = HIGH;
+  int is_stopping = false;
+  unsigned long start_time = millis();
+
+  //カウントスタート
+  //時間になったらサーボを動かす
+  while(true){
+    unsigned long pressed_time = 0;
+    int btn_state = digitalRead(btn_pin);
+
+    // Display information on LCD.
+    displayInfo(START_TIMER);
+
+    // If it is ringing time, ring the bell.
+
+
+    // Check the button state.
+    if(!btn_state & (btn_state ^ old_btn_state)){
+      // When the button is pressed.
+      pressed_time = millis();
+
+    }else if(btn_state & old_btn_state){
+      // When the button is kept pressing over 2 seconds.
+
+      // Return to setTimer.
+      if(millis() - pressed_time > 2000) break;
+
+    }else if(btn_state & (btn_state ^ old_btn_state)){
+      // When the button is released.
+      // Stop timer.
+      if(millis() - pressed_time > 100){
+        is_stopping = !is_stopping;
+      }
+    }
+
+    old_btn_state = btn_state;
+  }
+}
+
 // Display information on LCD.
-void displayInfo(int mode){
+void displayInfo(int mode, int* args){
   switch (mode) {
     case SET_TIMER:
       //上の段
@@ -157,6 +198,7 @@ void displayInfo(int mode){
       //下の段
       lcd.setCursor(0,1);
       // 1st ringing time
+      printTime(sec);
       lcd.print(time_now[0]);
       lcd.print(time_now[1]);
       lcd.print(":");
@@ -180,11 +222,26 @@ void displayInfo(int mode){
       break;
 
     case START_TIMER:
+      //上の段
       lcd.setCursor(0, 0);
-      lcd.write(LEFT_ARROW);
-      lcd.print(" SETALARM ");
-      lcd.write(RIGHT_ARROW);
-      displayBatteryCharge();
+      if(args[0] == 1){
+        // When measuring
+        lcd.print("Measuring...")
+      }else{
+        // When measuring is suspended
+        lcd.print("Stop!")
+      }
+
+      //下の段
+      lcd.setCursor(0,1);
+      lcd.print("     ");
+      // now
+      lcd.print(time_now[0]);
+      lcd.print(time_now[1]);
+      lcd.print(":");
+      lcd.print(time_now[2]);
+      lcd.print(time_now[3]);
+      lcd.print("      ");
       break;
 
     default:
@@ -198,12 +255,29 @@ int readEnc(int num){
   static int8_t encoders_ab[3] = {0, 0, 0};
   // Encoders rotate table
   static const int direction[]={0, 1, -1, 0, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, 0};
-  
+
   // Update phases value.
   encoders_ab[num] = (encoders_ab[num] << 2 | PIND >>6) & 0x0f;
 
   // Get rotate direction.
   return d[encoders_ab[num]];
+}
+
+void printTime(int total_seconds){
+  int minute = total_seconds / 60;
+  int seconds = total_seconds % 10;
+  int minute1 = total_seconds / 600;
+  int minute2 = total_seconds / 60 % 10;
+  int seconds1 = total_seconds % 60 / 10;
+  int seconds2 = total_seconds % 60 / 10;
+
+
+
+  lcd.print(time_now[0]);
+  lcd.print(time_now[1]);
+  lcd.print(":");
+  lcd.print(time_now[2]);
+  lcd.print(time_now[3]);
 }
 
 
