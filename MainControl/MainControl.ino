@@ -3,9 +3,9 @@
 #include <Servo.h>
 
 // Pin assign of rotary encoders(A/B phases)
-const int ENCODERS_PINS[][] = {{1, 2},
-                                {3, 4},
-                                {5, 6}
+const int ENCODERS_PINS[][] = {{0, 1},
+                                {2, 3},
+                                {4, 5}
                               };
 
 // Pin assign of a button.
@@ -32,15 +32,30 @@ const int SET_TIMER   = 0;
 const int START_TIMER = 1;
 
 // Waiting time to avoid chattering.
-const int WAIT_FOR_BOUNCE_MSEC = 20;
+const int WAIT_FOR_BOUNCE_MSEC = 100;
 
 // Addresses of EEPROM for keeping ringing time.
 const int RING_SECONDS_ADDR0 = 0;
 const int RING_SECONDS_ADDR1 = 1;
 const int RING_SECONDS_ADDR2 = 2;
 
-// time when the bell rings.
+// Time when the bell rings.
 int ring_seconds[3] = {0, 0, 0};
+
+// Manage the button long pressing
+bool transit = false;
+
+// Present encoders state
+int enc_state[][] = {{0, 0},
+                      {0, 0},
+                      {0, 0}
+                    };
+
+// Previous encoders state
+int enc_prev_state[][] = {{0, 0},
+                            {0, 0},
+                            {0, 0}
+                          };
 
 // LCD
 LiquidCrystal lcd(RS, ENABLE, DB4, DB5, DB6, DB7);
@@ -96,7 +111,8 @@ void loop(){
 
 // set time to ring the bell.
 void setTimer(){
-  int old_btn_state = HIGH; // The button's previous state.
+  int old_btn_state = digitalRead(BTN_PIN); // The button's previous state.
+  unsigned long pressed_time = 0;           // Time when the button pressed.
 
   while(true){
     unsigned long pressed_time = 0;
@@ -107,16 +123,26 @@ void setTimer(){
 
     // Adjust ringing time with rotary encoder and wait a short period to avoid chattering.
     for(int i=0; i<3; i++){
-      ring_seconds[i] += readEnc(i) * 10;
+      int a = 2 * i; // Port number for A phase
+      int b = a + 1; // Port number for B phase
+      enc_state[i][0] = (PIND & _BV(a)) >> a;
+      enc_state[i][1] = (PIND & _BV(b)) >> b;
+
+      if(enc_state[i][0] != enc_prev_state[i][0] || enc_state[i][1] != enc_prev_state[i][1] ){
+        ring_seconds[i] += readEnc(enc_prev_state[i][0], enc_prev_tate[i][1], enc_state[i][0], enc_state[i][1]) * 10;
+      }
+
+      enc_prev_state[i][0] = enc_state[i][0];
+      enc_prev_state[i][1] = enc_state[i][1];
     }
-    delay(WAIT_FOR_BOUNCE_MSEC);
+    // delay(WAIT_FOR_BOUNCE_MSEC);
 
     // Check the button state.
-    if(!btn_state & (btn_state ^ old_btn_state)){
+    if(!btn_state & (btn_state ^ old_btn_state) & !transit){
       // When the button is pressed.
       pressed_time = millis();
 
-    }else if(btn_state & old_btn_state){
+    }else if(!btn_state & !old_btn_state & !transit){
       // When the button is kept pressing over 2 seconds.
       // Goto preset mode.
       // TODO: Implement preset mode.
@@ -125,7 +151,10 @@ void setTimer(){
     }else if(btn_state & (btn_state ^ old_btn_state)){
       // When the button is released.
       // Finish setting.
-      if(millis() - pressed_time > 100) break;
+      if(millis() - pressed_time > WAIT_FOR_BOUNCE_MSEC){
+        transit = false;
+        break;
+      }
     }
 
     old_btn_state = btn_state;
@@ -133,15 +162,15 @@ void setTimer(){
 }
 
 void startTimer(){
-  int old_btn_state = HIGH;                // The button's previous state.
-  unsigned long pressed_time = 0;          // Time when the button pressed.
-  int is_stopping = 0;                     // Is the timer stops?
-  unsigned long start_time = millis();     // Time when this method starts[msec].
-  unsigned long suspension_start_time = 0; // Time when stops timer[msec].
-  unsigned long total_suspension_time = 0; // Total elapsed time when timer stops[msec].
-  // int elapsed_time = 0;                    // Elpsed time[sec].
-  int ranged_bell[3] = [0, 0, 0];          // See whether it already rang the bell or not
-  int args[2] = [0, 0];                    // [is_stopping, Elapsed time]
+  int old_btn_state = digitalRead(BTN_PIN); // The button's previous state.
+  unsigned long pressed_time = 0;           // Time when the button pressed.
+  int is_stopping = 0;                      // Is the timer stops?
+  unsigned long start_time = millis();      // Time when this method starts[msec].
+  unsigned long suspension_start_time = 0;  // Time when stops timer[msec].
+  unsigned long total_suspension_time = 0;  // Total elapsed time when timer stops[msec].
+                                            // int elapsed_time = 0;                       // Elpsed time[sec].
+  int ranged_bell[3] = [0, 0, 0];           // See whether it already rang the bell or not
+  int args[2] = [0, 0];                     // [is_stopping, Elapsed time]
 
   // Start timer.
   // Control the servo when it's ringing time.
@@ -167,20 +196,24 @@ void startTimer(){
     args[1] = (int)((millis() - start_time - total_suspension_time) / 1000L);
 
     // Check the button state.
-    if(!btn_state & (btn_state ^ old_btn_state)){
+    if(!btn_state & (btn_state ^ old_btn_state) & !transit){
       // When the button is pressed.
       pressed_time = millis();
 
-    }else if(btn_state & old_btn_state){
+    }else if(!btn_state & !old_btn_state & !transit){
       // When the button is kept pressing over 2 seconds.
       // Return to setTimer.
-      if(millis() - pressed_time > 2000) break;
+      if(millis() - pressed_time > 2000){
+        transit = true;
+        break;
+      }
 
     }else if(btn_state & (btn_state ^ old_btn_state)){
       // When the button is released.
       // Stop/restart timer.
-      if(millis() - pressed_time > 100){
+      if(millis() - pressed_time > WAIT_FOR_BOUNCE_MSEC){
         is_stopping = !is_stopping;
+        transit = false;
 
         if(is_stopping != 0){
           // When the timer stops.
@@ -242,17 +275,18 @@ void displayInfo(int mode, int* args){
 }
 
 // Returns encoder's rotate dirction.
-int readEnc(int num){
-  // Memoy of rotary encoders' A/B phases history
-  static int8_t encoders_ab[3] = {0, 0, 0};
-  // Encoders rotate table
-  static const int direction[]={0, 1, -1, 0, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, 0};
+int readEnc(uint8_t prev_a, uint8_t prev_b, uint8_t a, uint8_t b){
+  uint8_t encoded  = (prev_a << 4) | (prev_b << 3) | (a << 2) | b;
 
-  // Update phases value.
-  encoders_ab[num] = (encoders_ab[num] << 2 | PIND >>6) & 0x0f;
-
-  // Get rotate direction.
-  return d[encoders_ab[num]];
+  // if(encoded == 0b1101 || encoded == 0b0100 || encoded == 0b0010 || encoded == 0b1011){
+  if(encoded == 0b1101){
+    return 1;
+  // } else if(encoded == 0b1110 || encoded == 0b0111 || encoded == 0b0001 || encoded == 0b1000) {
+  }else if(encoded == 0b1110) {
+    return -1;
+  }else{
+    return 0;
+  }
 }
 
 // Display time like XX:XX.
