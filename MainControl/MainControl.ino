@@ -9,19 +9,18 @@ const int ENCODERS_PINS[][] = {{0, 1},
                               };
 
 // Pin assign of a button.
-const int BTN_PIN = 7;
+const int BTN_PIN = 12;
 
 // Pin assign of a servo.
-const int SERVO_PIN = 8;
+const int SERVO_PIN = 11;
 
 // Pin assign of a lcd.
-const int V_IN_LCD = 8;
-const int RS       = 9;
-const int ENABLE   = 10;
-const int DB4      = 11;
-const int DB5      = 12;
-const int DB6      = 14;
-const int DB7      = 15;
+const int RS       = 6;
+const int ENABLE   = 7;
+const int DB4      = 8;
+const int DB5      = 9;
+const int DB6      = 10;
+const int DB7      = 13;
 
 // For servo
 const int MIN_ANGLE = 70;
@@ -62,9 +61,6 @@ LiquidCrystal lcd(RS, ENABLE, DB4, DB5, DB6, DB7);
 
 void setup(){
   // Initialize the LCD.
-  pinMode(V_IN_LCD, OUTPUT);
-  digitalWrite(V_IN_LCD,HIGH);
-  //delay(100);
   lcd.begin(16, 2); //16 chars × 2 rows
   lcd.clear();
   lcd.setCursor(0, 0);
