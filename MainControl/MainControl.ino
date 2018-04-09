@@ -296,7 +296,7 @@ void printTime(int total_seconds){
 }
 
 // Control the servo to ring the bell.
-// This method is supposed to be completed in one second.
+// This method is supposed to be completed in less than one second.
 void ringBell(int times){
   float stroke_time = 333;             // Time for one stroke[msec].
   int delay_msec = (int)(stroke_time / ((MAX_ANGLE - MIN_ANGLE) * 2 + 1)); // Calculate delay to finish all strokes in one second.
