@@ -1,4 +1,4 @@
-# CallBellRingingMachine
+# Finger Bell
 An mechanical timekeeper.
 
 https://youtu.be/Tz69III_xIk
