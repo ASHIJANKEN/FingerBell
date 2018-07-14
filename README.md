@@ -1,5 +1,5 @@
 # Finger Bell
-An mechanical timekeeper.
+A mechanical timekeeper.
 
 https://youtu.be/Tz69III_xIk
 
