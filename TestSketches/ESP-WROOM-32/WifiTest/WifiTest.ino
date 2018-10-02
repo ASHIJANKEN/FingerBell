@@ -2,8 +2,8 @@
 #include <WiFiClient.h>
 
 // ssid and password for connecting to Wi-Fi router
-const char *ssid_router = "";
-const char *password_router = "";
+const char *ssid_router = "ssid";
+const char *password_router = "password";
 
 // ssid and password for an original access point
 const char *ssid_ap = "ESP32ap";
@@ -40,7 +40,7 @@ void setup(){
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid_router);
-  WiFi.begin(ssid_router, password_router);
+  WiFi.begin(const_cast<char*>(ssid_router), const_cast<char*>(password_router));
   while (WiFi.status() != WL_CONNECTED) {
       delay(500);
       Serial.print(".");
