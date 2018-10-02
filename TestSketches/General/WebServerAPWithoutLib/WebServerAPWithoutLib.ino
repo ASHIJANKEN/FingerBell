@@ -124,6 +124,16 @@ void sendEspCmd(String cmd, Stream* serial_port){
     serial_port->println(cmd);
 }
 
+void initEsp(){
+    sendEspCmd("ATE0", &Serial1);  // disable echo of commands
+    sendEspCmd("AT+CWMODE=1", &Serial1);  // set station mode
+    sendEspCmd("AT+CIPMUX=1", &Serial1);  // set multiple connections mode
+    sendEspCmd("AT+CIPDINFO=1", &Serial1);  // Show remote IP and port with "+IPD"
+    sendEspCmd("AT+CWAUTOCONN=0", &Serial1);  // Disable autoconnect
+    sendEspCmd("AT+CWDHCP=1,1", &Serial1);  // enable DHCP
+    delay(200);
+}
+
 void setup(){
     Serial.begin(9600);   // initialize serial for debugging
     Serial1.begin(115200);    // initialize serial for ESP module
@@ -133,13 +143,7 @@ void setup(){
     sendEspCmd("AT+UART_CUR=9600,8,1,0,0", &Serial1);
     delay(1000);
     Serial1.begin(9600);
-    sendEspCmd("ATE0", &Serial1);  // disable echo of commands
-    sendEspCmd("AT+CWMODE=1", &Serial1);  // set station mode
-    sendEspCmd("AT+CIPMUX=1", &Serial1);  // set multiple connections mode
-    sendEspCmd("AT+CIPDINFO=1", &Serial1);  // Show remote IP and port with "+IPD"
-    sendEspCmd("AT+CWAUTOCONN=0", &Serial1);  // Disable autoconnect
-    sendEspCmd("AT+CWDHCP=1,1", &Serial1);  // enable DHCP
-    delay(200);
+    initEsp();
 
     // check for the presence of the shield
     // if (WiFi.status() == WL_NO_SHIELD) {
@@ -197,52 +201,51 @@ void setup(){
 
 void loop()
 {
-    Serial.println("loop");
-    while(1){};
-    // WiFiEspClient client = server.available();  // listen for incoming clients
 
-    // if (client) {                               // if you get a client,
-    // Serial.println("New client");             // print a message out the serial port
-    // buf.init();                               // initialize the circular buffer
-    // while (client.connected()) {              // loop while the client's connected
-    //   if (client.available()) {               // if there's bytes to read from the client,
-    //     char c = client.read();               // read a byte, then
-    //     buf.push(c);                          // push it to the ring buffer
+    WiFiEspClient client = server.available();  // listen for incoming clients
 
-    //     // you got two newline characters in a row
-    //     // that's the end of the HTTP request, so send a response
-    //     if (buf.endsWith("\r\n\r\n")) {
-    //       sendHttpResponse(client);
-    //       break;
-    //     }
-    //   }
-    // }
+    if (client) {                               // if you get a client,
+    Serial.println("New client");             // print a message out the serial port
+    buf.init();                               // initialize the circular buffer
+    while (client.connected()) {              // loop while the client's connected
+      if (client.available()) {               // if there's bytes to read from the client,
+        char c = client.read();               // read a byte, then
+        buf.push(c);                          // push it to the ring buffer
 
-    // // give the web browser time to receive the data
-    // delay(10);
+        // you got two newline characters in a row
+        // that's the end of the HTTP request, so send a response
+        if (buf.endsWith("\r\n\r\n")) {
+          sendHttpResponse(client);
+          break;
+        }
+      }
+    }
 
-    // // close the connection
-    // client.stop();
-    // Serial.println("Client disconnected");
-    // }
-    // }
+    // give the web browser time to receive the data
+    delay(10);
 
-    // void sendHttpResponse(WiFiEspClient client)
-    // {
-    // client.print(
-    // "HTTP/1.1 200 OK\r\n"
-    // "Content-Type: text/html\r\n"
-    // "Connection: close\r\n"  // the connection will be closed after completion of the response
-    // "Refresh: 20\r\n"        // refresh the page automatically every 20 sec
-    // "\r\n");
-    // client.print("<!DOCTYPE HTML>\r\n");
-    // client.print("<html>\r\n");
-    // client.print("<h1>Hello World!</h1>\r\n");
-    // client.print("Requests received: ");
-    // client.print(++reqCount);
-    // client.print("<br>\r\n");
-    // client.print("Analog input A0: ");
-    // client.print(analogRead(0));
-    // client.print("<br>\r\n");
-    // client.print("</html>\r\n");
+    // close the connection
+    client.stop();
+    Serial.println("Client disconnected");
+    }
+    }
+
+    void sendHttpResponse(WiFiEspClient client)
+    {
+    client.print(
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n"  // the connection will be closed after completion of the response
+    "Refresh: 20\r\n"        // refresh the page automatically every 20 sec
+    "\r\n");
+    client.print("<!DOCTYPE HTML>\r\n");
+    client.print("<html>\r\n");
+    client.print("<h1>Hello World!</h1>\r\n");
+    client.print("Requests received: ");
+    client.print(++reqCount);
+    client.print("<br>\r\n");
+    client.print("Analog input A0: ");
+    client.print(analogRead(0));
+    client.print("<br>\r\n");
+    client.print("</html>\r\n");
 }
