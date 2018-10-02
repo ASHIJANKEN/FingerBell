@@ -9,9 +9,8 @@
 
 // Pin assign of rotary encoders(A/B phases)
 const int ENCODERS_PINS[3][2] = {{2, 3},
-                                                                {4, 5},
-                                                                {6, 7}
-                                                            };
+                                {4, 5},
+                                {6, 7}};
 
 // Pin assign of a button.
 const int BTN_PIN = 12;
@@ -59,15 +58,13 @@ int ring_seconds[3] = {0, 0, 0};
 
 // Present encoders state
 int enc_state[3][2] = {{0, 0},
-                                            {0, 0},
-                                            {0, 0}
-                                        };
+                        {0, 0},
+                        {0, 0}};
 
 // Previous encoders state
 int enc_prev_state[3][2] = {{0, 0},
-                                                        {0, 0},
-                                                        {0, 0}
-                                                    };
+                            {0, 0},
+                            {0, 0}};
 
 // SSID and password for an its own access point
 const char ssid_ap[] = "FingerBell_AP";
@@ -91,11 +88,6 @@ LiquidCrystal lcd(RS, ENABLE, DB4, DB5, DB6, DB7);
 Servo myservo;
 
 void setup(){
-    // Initialize serial for debug console
-    Serial.begin(9600);
-    // Initialize serial for ESP module
-    Serial1.begin(9600);
-
     // Display initializing message.
     lcd.begin(16, 2); //16 chars × 2 rows
     lcd.clear();
@@ -103,6 +95,25 @@ void setup(){
     lcd.print("STARTING BELL");
     lcd.setCursor(0, 1);
     lcd.print("RINGING MACHINE");
+
+    // Initialize serial ports & ESP module
+    Serial.begin(9600);  // Initialize serial for debugging
+    Serial1.begin(115200);
+    delay(10);
+    Serial1.println("AT+UART_CUR=9600,8,1,0,0");  // Change ESP's baudrate
+    delay(1000);
+    Serial1.begin(9600); // Initialize serial for ESP module
+    WiFi.init(&Serial1); // Initialize ESP module
+    // check for the presence of the shield
+    if (WiFi.status() == WL_NO_SHIELD) {
+        Serial.println("ESP-WROOM-02 is not present");
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("ESP-WROOM-02");
+        lcd.setCursor(0, 1);
+        lcd.print("is not present");
+        while (true); // don't continue
+    }
 
     //Initialize the servo.
     myservo.attach(SERVO_PIN);
@@ -182,8 +193,9 @@ bool setRouterConfig(){
 
     // Start its own access point
     status = WiFi.beginAP(ssid_ap, 10, password_ap, ENC_TYPE_WPA2_PSK);
+    Serial.println("Access point started");
 
-    // Start serber.
+    // Start server.
     server.begin();
 
     delay(1000);
@@ -250,7 +262,7 @@ bool setRouterConfig(){
         while (client.connected()) {
             // Client send request?
             if (client.available()) {
-                String req = client.readStringUntil('\r');
+                String req = client.readStringUntil('\r\n\r\n');
                 client.read(); // Read "\n"
                 Serial.println(req);
 
