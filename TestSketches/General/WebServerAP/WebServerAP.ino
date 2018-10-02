@@ -179,9 +179,10 @@ void setup(){
 
 
     // start the web server on port 80
+    Serial.println("Attempting to start server");
     sendEspCmd("AT+CIPSERVER=1,80", &Serial1);
-    delay(500);
-    char res_s = {'\0'};
+    delay(2000);
+    char res_s[6] = {'\0'};
     getCharsUartBuffer(&Serial1, res_s, 1000);
     if(strcmp(res_s, "ERROR") != 0){
         Serial.println("Started server.");
@@ -189,11 +190,8 @@ void setup(){
         Serial.println("Failed to start server.");
     }
 
-    // delay(1000);
-    // clearUartBuffer(&Serial1);
-    // delay(1000);
-    // Serial.println(Serial1.available());
-
+    delay(100);
+    clearUartBuffer(&Serial1);
 }
 
 
