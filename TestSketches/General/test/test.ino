@@ -1,183 +1,80 @@
 #include <LiquidCrystal.h>
 #include <EEPROM.h>
-// #include <stdio.h>
-// #include <string.h>
+#include <stdio.h>
+#include <string.h>
 #include <Servo.h>
 #include <WiFiEsp.h>
 #include <SoftwareSerial.h>
+#include <avr/pgmspace.h>
 
-
-// Pin assign of rotary encoders(A/B phases)
-const int ENCODERS_PINS[3][2] = {{2, 3},
-                                {4, 5},
-                                {6, 7}};
+// // Status number for sendHttpResponse
+#define REQUEST_ROUTER_INFO 0
+#define NOT_FOUND 1
 
 // Pin assign of a button.
-const int BTN_PIN = 12;
+#define BTN_PIN 12
 
 // Pin assign of a servo.
-const int SERVO_PIN = 11;
+#define SERVO_PIN 11
 
 // Pin assign of a lcd.
-const int RS       = 14;
-const int ENABLE   = 15;
-const int DB4      = 8;
-const int DB5      = 9;
-const int DB6      = 10;
-const int DB7      = 13;
+#define RS     14
+#define ENABLE 15
+#define DB4    8
+#define DB5    9
+#define DB6    10
+#define DB7    13
 
 // For servo
-const int MIN_ANGLE = 90;
-const int MAX_ANGLE = 180;
+#define MIN_ANGLE 90
+#define MAX_ANGLE 180
 
 // Modes
-const int SET_TIMER   = 0;
-const int START_TIMER = 1;
+#define SET_TIMER   0
+#define START_TIMER 1
 
 //Button state
-const int NOT_PRESSED         = 0;
-const int PRESSED             = 1;
-const int PRESSING            = 2;
-const int RELEASED            = 3;
-const int LONG_PRESSED        = 4;
-const int LONG_PRESSING       = 5;
-const int LONG_PRESS_RELEASED = 6;
+#define NOT_PRESSED         0
+#define PRESSED             1
+#define PRESSING            2
+#define RELEASED            3
+#define LONG_PRESSED        4
+#define LONG_PRESSING       5
+#define LONG_PRESS_RELEASED 6
 
 // Waiting time to avoid chattering.
-const int WAIT_FOR_BOUNCE_MSEC = 100;
+#define WAIT_FOR_BOUNCE_MSEC 100
 
 // Address of EEPROM for keeping ringing time.
-const int RING_ADDR_OFFSET = 0;
+#define RING_ADDR_OFFSET 0
 
 // Address of router's SSID and PASSWORD
-const int SSID_OFFSET = 6; // 32 characters at maximum
-const int PASSWORD_OFFSET = 40; // 64 characters at maximum
+#define SSID_OFFSET 6 // 32 characters at maximum
+#define PASSWORD_OFFSET 40 // 64 characters at maximum
 
 // Time when the bell rings.
 int ring_seconds[3] = {0, 0, 0};
 
-// Present encoders state
-int enc_state[3][2] = {{0, 0},
-                        {0, 0},
-                        {0, 0}};
-
-// Previous encoders state
-int enc_prev_state[3][2] = {{0, 0},
-                            {0, 0},
-                            {0, 0}};
-
-// SSID and password for an its own access point
-const char ssid_ap[] = "FingerBell_AP";
-const char password_ap[] = "fingerbell_1234";
-
 // SSID and password for connecting to Wi-Fi router
-char ssid_router[40];
-char password_router[70];
 int ssid_length = 0;
 int password_length = 0;
 
 // TCP server at port 80 will respond to HTTP requests
 WiFiEspServer server(80);
-SoftwareSerial Serial1(6, 7); // RX, TX
+
+// Serial port for ESP-WROOM-02
+SoftwareSerial Serial1(A2, A3); // RX, TX
 
 // Create objects.
 LiquidCrystal lcd(RS, ENABLE, DB4, DB5, DB6, DB7);
 Servo myservo;
 
-
-
-
-
-void clearUartBuffer(Stream* serial_port){
-    while(serial_port->available()){
-        serial_port->read();
-    }
-}
-
-void printUartBuffer(Stream* serial_port, int timeout_ms){
-    unsigned long start_ms = millis();
-    char ok[3] = {'\0'};
-    while(millis() - start_ms < timeout_ms){
-        if(serial_port->available()){
-            ok[0] = ok[1];
-            ok[1] = (char)serial_port->read();
-            Serial.write(ok[1]);
-
-            if(strcmp(ok, "OK") == 0){
-                break;
-            }
-      }
-    }
-}
-
-void getCharsUartBuffer(Stream* serial_port, char* dest, int timeout_ms){
-    unsigned long start_ms = millis();
-    int p = 0;
-    char ok[3] = {'\0'};
-
-    while(millis() - start_ms < timeout_ms){
-        if(serial_port->available()){
-            ok[0] = ok[1];
-            ok[1] = (char)serial_port->read();
-            *(dest + p) = ok[1];
-            p++;
-
-            if(strcmp(ok, "OK") == 0){
-                return;
-            }
-        }
-    }
-
-    Serial.println("[timeout]getCharsUartBuffer()");
-    strcpy(dest, "ERROR");
-    return;
-}
-
-void getCharsUartBuffer(Stream* serial_port, char* dest, int buf_size, char* start_tag, char* end_tag, int timeout_ms){
-    RingBuffer buf(buf_size);
-    unsigned long start_ms = millis();
-    bool found_stag = false;
-
-    while(millis() - start_ms < timeout_ms){
-        if(serial_port->available()){
-            buf.push((char)serial_port->read());
-
-            if(buf.endsWith(start_tag)){
-                found_stag = true;
-                break;
-            }
-        }
-    }
-
-    if(!found_stag){
-        Serial.println("[timeout]getCharsUartBuffer()");
-        strcpy(dest, "ERROR");
-        return;
-    }
-
-    buf.init();
-    while(millis() - start_ms < timeout_ms){
-        if(serial_port->available()){
-            buf.push((char)serial_port->read());
-
-            if(buf.endsWith(end_tag)){
-                buf.getStr(dest, strlen(end_tag));
-                return;
-            }
-        }
-    }
-
-    Serial.println("[timeout]getCharsUartBuffer()");
-    strcpy(dest, "ERROR");
-    return;
-}
-
-void sendEspCmd(String cmd, Stream* serial_port){
-    clearUartBuffer(serial_port);
-    serial_port->println(cmd);
-}
-
 void setup(){
+    // Pin assign of rotary encoders(A/B phases)
+    int ENCODERS_PINS[3][2] = {{2, 3},
+                                {4, 5},
+                                {6, 7}};
+
     // Display initializing message.
     lcd.begin(16, 2); //16 chars × 2 rows
     lcd.clear();
@@ -187,35 +84,15 @@ void setup(){
     lcd.print("RINGING MACHINE");
 
     // Initialize serial ports & ESP module
-    Serial.begin(9600);   // initialize serial for debugging
-    Serial1.begin(115200);    // initialize serial for ESP module
+    Serial.begin(9600);  // Initialize serial for debugging
+    Serial1.begin(115200);
     delay(10);
-    sendEspCmd("AT+UART_CUR=9600,8,1,0,0", &Serial1);
-    delay(1000);
-    Serial1.begin(9600);
-    sendEspCmd("ATE0", &Serial1);  // disable echo of commands
-    sendEspCmd("AT+CWMODE=1", &Serial1);  // set station mode
-    sendEspCmd("AT+CIPMUX=1", &Serial1);  // set multiple connections mode
-    sendEspCmd("AT+CIPDINFO=1", &Serial1);  // Show remote IP and port with "+IPD"
-    sendEspCmd("AT+CWAUTOCONN=0", &Serial1);  // Disable autoconnect
-    sendEspCmd("AT+CWDHCP=1,1", &Serial1);  // enable DHCP
-    delay(200);
-
-    // Clear Serial1's buffer
-    clearUartBuffer(&Serial1);
-
+    Serial1.println("AT+UART_CUR=9600,8,1,0,0");  // Change ESP's baudrate
+    delay(20);
+    Serial1.begin(9600); // Initialize serial for ESP module
+    WiFi.init(&Serial1); // Initialize ESP module
     // check for the presence of the shield
-    Serial1.println("AT+CIPSTATUS");
-    char ok[2];
-    while(Serial1.available()){
-        ok[0] = ok[1];
-        ok[1] = Serial1.read();
-        if(strcmp(ok, "OK") == 0){
-            return;
-        }
-    }
-    if (strcmp(ok, "OK") != 0) {
-        Serial.println("ESP-WROOM-02 is not present");
+    if (WiFi.status() == WL_NO_SHIELD) {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("ESP-WROOM-02");
@@ -228,25 +105,18 @@ void setup(){
     myservo.attach(SERVO_PIN);
 
     // Get ringing time from EEPROM.
-    // Serial.println("-----------------");
+    Serial.println("-----------------");
     for(int i = 0; i < 3; i++){
-        // Serial.println(RING_ADDR_OFFSET + i*2);
+        Serial.println(RING_ADDR_OFFSET + i*2);
         int upper = EEPROM.read(RING_ADDR_OFFSET + i*2);
-        // Serial.println(EEPROM.read(RING_ADDR_OFFSET + i*2));
+        Serial.println(EEPROM.read(RING_ADDR_OFFSET + i*2));
         int lower = EEPROM.read(RING_ADDR_OFFSET + i*2 + 1);
-        // Serial.println(EEPROM.read(RING_ADDR_OFFSET + i*2 + 1));
+        Serial.println(EEPROM.read(RING_ADDR_OFFSET + i*2 + 1));
         ring_seconds[i] = (int)(upper << 8 | lower);
     }
 
     // Get SSID and password from EEPROM.
     ssid_length = EEPROM.read(SSID_OFFSET);
-    for(int i = 0; i < ssid_length; i++){
-        ssid_router[i] = EEPROM.read(SSID_OFFSET + 1 + i) + 0x30;
-    }
-    password_length = EEPROM.read(PASSWORD_OFFSET);
-    for(int i = 0; i < password_length; i++){
-        password_router[i] = EEPROM.read(PASSWORD_OFFSET + 1 + i) + 0x30;
-    }
 
     // Disable an internal LED.
     pinMode(13,OUTPUT);
@@ -270,47 +140,39 @@ void setup(){
 }
 
 void loop(){
-    Serial.println();
-    Serial.println("===Entered setRouterConfig()===");
+    // Serial.println("Entered setRouterConfig()");
 
-    // Display "setup mode"
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("ENTERED");
-    lcd.setCursor(0, 1);
-    lcd.print("SETUP MODE...");
+    // // Display "setup mode"
+    // lcd.clear();
+    // lcd.setCursor(0, 0);
+    // lcd.print("ENTERED");
+    // lcd.setCursor(0, 1);
+    // lcd.print("SETUP MODE...");
+
+    // SSID and password for an its own access point
+    char ssid_ap[] = "FingerBell_AP";
+    char password_ap[] = "fingerbell_1234";
 
     // Start its own access point
-    Serial1.println("AT+CWMODE_CUR=2");  // set AP mode
-    Serial1.println("AT+CWSAP_CUR=\"" + ssid_ap + "\",\"" + password_ap + "\",10,4");  // start access point
-    // int status = WiFi.beginAP(ssid_ap, 10, password_ap, ENC_TYPE_WPA2_PSK);
+    WiFi.beginAP(ssid_ap, 10, password_ap, ENC_TYPE_WPA2_PSK);
 
     // Start server.
-    Serial1.println("AT+CIPSERVER=1,80");
-    // server.begin();
+    server.begin();
 
     delay(1000);
 
-    // Clear Serial1's buffer
-    clearUartBuffer(&Serial1);
-
     // Get IP address
-    Serial1.println("AT+CIPAP?");  // getIpAddressAP
-    String ap_ip = Serail1.readStringUntil("OK");
-    // IPAddress ap_ip = WiFi.localIP();
+    IPAddress ap_ip = WiFi.localIP();
 
     // Show some info
+    Serial.print("SSID: ");
+    Serial.println(ssid_ap);
     Serial.print("IP Address: ");
-    Serial.println(ap_ip);
-    Serial.println();
-    Serial.print("Connect to ");
-    Serial.print(ssid_ap);
-    Serial.print(" and open a browser to http://");
     Serial.println(ap_ip);
     Serial.println();
 
     // Show IP address to LCD
-    String ip_str = (String)ap_ip[0] + "." + (String)ap_ip[1] + "." + (String)ap_ip[2] + "." + (String)ap_ip[3];
+    String ip_str = String(ap_ip[0]) + "." + String(ap_ip[1]) + "." + String(ap_ip[2]) + "." + String(ap_ip[3]);
     int ip_len = ip_str.length() + 1;
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -324,6 +186,7 @@ void loop(){
     ip_str.toCharArray(ip_chars, ip_chars_len);
     unsigned long last_time = micros();
     int rotate_pos = 0;
+    // RingBuffer buf(150);
     while(1){
         // Show IP address with rotation on lcd
         unsigned long cur_time = micros();
@@ -344,106 +207,139 @@ void loop(){
 
         // Check if a client has connected
         WiFiEspClient client = server.available();
-
-        if (!client) {
-                continue;
+        if(!client){
+            continue;
         }
 
-        Serial.println("");
         Serial.println("New client");
+        char buf[150] = {'\0'};
+        int buf_ptr = 0;
 
         // Check client is connected
         bool set_ssid_password = false;
-        while (client.connected()) {
+        while(client.connected()){
             // Client send request?
-            if (client.available()) {
-                String req = client.readStringUntil('\r\n\r\n');
-                Serial.println(req);
+            if(client.available()){
+                buf[buf_ptr] = client.read();
 
-                // Parse the request to see which page the client want
-                int addr_start = req.indexOf(' ');
-                int addr_end = req.indexOf(' ', addr_start + 1);
-                if (addr_start == -1 || addr_end == -1) {
-                    Serial.print("Invalid request: ");
-                    Serial.println(req);
+                if(strncmp(buf + buf_ptr - 6, " HTTP/", 6) == 0){
+                    // Read rest of request
+                    while(client.available()){
+                        client.read();
+                    }
+
+                    String query = buf;
+                    // Serial.print("query: ");
+                    // Serial.println(query);
+
+                    // Respond to request
+                    if(query.indexOf("/") != -1 || query.indexOf("/?") != -1) {
+                        sendHttpResponse(client, REQUEST_ROUTER_INFO, query);
+                        if(query.indexOf("Set") != -1){
+                            set_ssid_password = true;
+                        }
+                    }else{
+                        sendHttpResponse(client, NOT_FOUND, query);
+                    }
                     break;
                 }
 
-                req = req.substring(addr_start + 1, addr_end);
-                Serial.print("Request: ");
-                Serial.println(req);
-
-                if(req.indexOf("/") != -1) {
-                    client.println("HTTP/1.1 200 OK");
-                    client.println("Content-type:text/html");
-                    client.println();
-
-                    client.println("<!DOCTYPE html>");
-                    client.println("<html>");
-                    client.println("<head>");
-                    client.println("<meta name='viewport' content='initial-scale=1.5'>");
-                    client.println("</head>");
-                    client.println("<body>");
-                    client.println("<form method='get'>");
-                    client.println("<br>");
-
-                    // Change output depends on a request
-                    if(req.indexOf("Set") != -1){
-                        int ssid_addr_start = req.indexOf("ssid") + 5;
-                        int ssid_addr_end = req.indexOf("&", ssid_addr_start);
-                        int pass_addr_start = req.indexOf("password") + 9;
-                        int pass_addr_end = req.indexOf("&", pass_addr_start);
-                        String ssid = req.substring(ssid_addr_start, ssid_addr_end);
-                        String password = req.substring(pass_addr_start, pass_addr_end);
-                        // TODO ; convert string to char[]
-                        // ssid_router =
-                        // password_router =
-
-                        // Write SSID and password to EEPROM
-                        EEPROM.write(SSID_OFFSET, ssid.length());
-                        // Write SSID and password to EEPROM
-                        for (int i = 0; i < ssid.length(); i++){
-                            EEPROM.write(SSID_OFFSET + 1 + i, ssid_router[i] - 0x30);
-                        }
-
-                        EEPROM.write(PASSWORD_OFFSET, password.length());
-                        for (int i = 0; i < password.length(); i++){
-                            EEPROM.write(PASSWORD_OFFSET + 1 + i, password_router[i] - 0x30);
-                        }
-
-                        set_ssid_password = true;
-                        client.println("Set SSID and password correctly.<br>");
-                    }
-
-                    client.println("</font><br>");
-                    client.print("Set SSID : ");
-                    client.print("<input type=\"text\" name='ssid' value='0' required>");
-                    client.print("Set password : ");
-                    client.print("<input type=\"text\" name='password' required>");
-                    client.print("<br>");
-                    client.print("<input type='submit' name='Set' value='Set' style='background-color:black; color:white;' >");
-                    client.print("</form>");
-                    client.print("</body>");
-                    client.print("</html>");
-
-                    client.println();
-                }else{
-                    // if we can not find the page that client request then we return 404 File not found
-                    client.println("HTTP/1.1 404 Not Found");
-                    Serial.println("Sending 404");
-                }
+                buf_ptr++;
             }
-            break;
         }
+        delay(10);
+        client.stop();
         Serial.println("Done with client");
-        if(set_ssid_password == true) return true;
+        // if(set_ssid_password == true) return true;
     }
-
-    while(1){}
 }
 
-void clearUartBuffer(Stream* serial_port){
-    while(serial_port->available()){
-        serial_port->read();
+void sendHttpResponse(WiFiEspClient client, int status, String query){
+    switch(status){
+        case REQUEST_ROUTER_INFO:
+            Serial.println("Sending REQUEST_ROUTER_INFO");
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:text/html\r\nConnection: close\r\n\r\n"));
+            client.print(F("<!DOCTYPE html><html>"));
+            client.print(F("<head><meta name='viewport' content='initial-scale=1.5'></head>"));
+            client.print(F("<body><h1>Set SSID and password of a router.</h1><br>"));
+
+            // Change output depends on a request
+            if(query.indexOf("Set") != -1){
+                int ssid_addr_start = query.indexOf("ssid") + 5;
+                int ssid_addr_end = query.indexOf("&", ssid_addr_start);
+                int pass_addr_start = query.indexOf("password") + 9;
+                int pass_addr_end = query.indexOf("&", pass_addr_start);
+                String ssid = query.substring(ssid_addr_start, ssid_addr_end);
+                String password = query.substring(pass_addr_start, pass_addr_end);
+                Serial.print("SSID : ");
+                Serial.println(ssid);
+                Serial.print("password : ");
+                Serial.println(password);
+
+                char ssid_router[40];
+                char password_router[70];
+                ssid.toCharArray(ssid_router, ssid.length());
+                password.toCharArray(password_router, password.length());
+
+                // Write SSID and password to EEPROM
+                EEPROM.write(SSID_OFFSET, ssid.length());
+                // Write SSID and password to EEPROM
+                for (int i = 0; i < ssid.length(); i++){
+                    EEPROM.write(SSID_OFFSET + 1 + i, ssid_router[i] - 0x30);
+                }
+
+                EEPROM.write(PASSWORD_OFFSET, password.length());
+                for (int i = 0; i < password.length(); i++){
+                    EEPROM.write(PASSWORD_OFFSET + 1 + i, password_router[i] - 0x30);
+                }
+
+                client.println(F("Set SSID and password correctly.<br>"));
+            }
+
+            client.print(F("<form>SSID : <input type=\"text\" maxlength=\"32\" name='ssid' required><br>"));
+            client.print(F("password : <input type=\"text\" maxlength=\"64\" name='password' required><br>"));
+            client.print(F("<input type='submit' name='Set' value='Set'>"));
+            client.print(F("</form></body></html>\r\n"));
+
+            break;
+        case NOT_FOUND:
+            Serial.println(F("Sending 404"));
+            client.println(F("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"));
+
+            break;
     }
+}
+
+bool subString(char* dest, char* str_origin, char* start_tag, char* end_tag){
+    int addr_start = -1;
+    int addr_end = -1;
+    int start_tag_len = strlen(start_tag);
+    int end_tag_len = strlen(end_tag);
+
+    int i = 0;
+    for(i = 0; str_origin[i] != '\0'; i++){
+        if(strncmp(str_origin + i, start_tag, start_tag_len) == 0){
+            addr_start = i + start_tag_len;
+            i += start_tag_len;
+            break;
+        }
+    }
+
+    i++;
+
+    for(; str_origin[i] != '\0'; i++){
+        if(strncmp(str_origin + i, end_tag, end_tag_len) == 0){
+            addr_end = i;
+            break;
+        }
+    }
+
+    if(addr_start == -1 || addr_end == -1){
+        return false;
+    }
+
+    memcpy(dest, str_origin + addr_start, addr_end - addr_start);
+    return true;
 }

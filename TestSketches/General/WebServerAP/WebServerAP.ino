@@ -16,7 +16,7 @@
 // Emulate Serial1 on pins 6/7 if not present
 #ifndef HAVE_HWSERIAL1
 #include "SoftwareSerial.h"
-SoftwareSerial Serial1(6, 7); // RX, TX
+SoftwareSerial Serial1(A2, A3); // RX, TX
 #endif
 
 char ssid[] = "TwimEsp";         // your network SSID (name)
