@@ -8,8 +8,11 @@
 #include <avr/pgmspace.h>
 
 // // Status number for sendHttpResponse
-#define REQUEST_ROUTER_INFO 0
-#define NOT_FOUND 1
+#define SET_ROUTER_INFO 0
+#define API_RESPONSE    1
+#define SET_RING_TIME   2
+#define API_ERROR       3
+#define NOT_FOUND       4
 
 // Pin assign of a button.
 #define BTN_PIN 12
@@ -150,11 +153,14 @@ void loop(){
     // lcd.print("SETUP MODE...");
 
     // SSID and password for an its own access point
-    char ssid_ap[] = "FingerBell_AP";
-    char password_ap[] = "fingerbell_1234";
+    char ssid[] = "SSID";
+    char pass[] = "PASS";
 
-    // Start its own access point
-    WiFi.beginAP(ssid_ap, 10, password_ap, ENC_TYPE_WPA2_PSK);
+    // attempt to connect to WiFi network
+    Serial.print("Attempting to connect to WPA SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network
+    WiFi.begin(ssid, pass);
 
     // Start server.
     server.begin();
@@ -166,7 +172,7 @@ void loop(){
 
     // Show some info
     Serial.print("SSID: ");
-    Serial.println(ssid_ap);
+    Serial.println(ssid);
     Serial.print("IP Address: ");
     Serial.println(ap_ip);
     Serial.println();
@@ -212,7 +218,7 @@ void loop(){
         }
 
         Serial.println("New client");
-        char buf[150] = {'\0'};
+        char buf[60] = {'\0'};
         int buf_ptr = 0;
 
         // Check client is connected
@@ -229,17 +235,14 @@ void loop(){
                     }
 
                     String query = buf;
-                    // Serial.print("query: ");
-                    // Serial.println(query);
+                    Serial.print("query: ");
+                    Serial.println(query);
 
                     // Respond to request
-                    if(query.indexOf("/") != -1 || query.indexOf("/?") != -1) {
-                        sendHttpResponse(client, REQUEST_ROUTER_INFO, query);
-                        if(query.indexOf("Set") != -1){
-                            set_ssid_password = true;
-                        }
+                    if(query.indexOf("/?get_") != -1) {
+                        sendHttpResponse(client, API_RESPONSE, query);
                     }else{
-                        sendHttpResponse(client, NOT_FOUND, query);
+                        sendHttpResponse(client, API_ERROR, query);
                     }
                     break;
                 }
@@ -256,8 +259,8 @@ void loop(){
 
 void sendHttpResponse(WiFiEspClient client, int status, String query){
     switch(status){
-        case REQUEST_ROUTER_INFO:
-            Serial.println("Sending REQUEST_ROUTER_INFO");
+        case SET_ROUTER_INFO:
+            Serial.println("Sending SET_ROUTER_INFO");
 
             client.print(F("HTTP/1.1 200 OK\r\n"));
             client.print(F("Content-type:text/html\r\nConnection: close\r\n\r\n"));
@@ -302,12 +305,99 @@ void sendHttpResponse(WiFiEspClient client, int status, String query){
             client.print(F("password : <input type=\"text\" maxlength=\"64\" name='password' required><br>"));
             client.print(F("<input type='submit' name='Set' value='Set'>"));
             client.print(F("</form></body></html>\r\n"));
+            break;
+
+        case API_RESPONSE:{
+            Serial.println(F("Sending API_RESPONSE"));
+            bool send_elapsed_t = false;
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:application/json; charset=utf-8\r\nConnection: close\r\n\r\n"));
+
+            client.print(F("{\r\n"));
+            if(query.indexOf("get_elapsed_t") != -1){
+                send_elapsed_t = true;
+                client.print(F("    \"elapsed_t\": \""));
+                // client.print(args[1]);
+                client.print(1253);
+                client.print(F("\""));
+            }
+
+            if(query.indexOf("get_ring_t") != -1){
+                if(send_elapsed_t == true){
+                    client.print(F(",\r\n"));
+                }
+
+                client.print(F("    \"ring_t\": {\r\n       \"1\": \""));
+                client.print(ring_seconds[0]);
+                client.print(F("\",\r\n       \"2\": \""));
+                client.print(ring_seconds[1]);
+                client.print(F("\",\r\n       \"3\": \""));
+                client.print(ring_seconds[2]);
+                client.print(F("\"\r\n    }"));
+            }
+
+            client.print(F("\r\n}\r\n"));
+            break;
+        }
+        case SET_RING_TIME:
+
+            if(query.indexOf("set_ring") != -1){
+                if(query.indexOf("set_ring1") != 1){
+                    int addr_start = query.indexOf("set_ring1") + 9;
+                    int addr_end = query.indexOf("&", addr_start);
+                    if(addr_end == -1){
+                        query.indexOf(" ", addr_start);
+                    }
+                    ring_seconds[0] = query.substring(addr_start, addr_end).toInt();
+                }
+                if(query.indexOf("set_ring2") != 1){
+                    int addr_start = query.indexOf("set_ring2") + 9;
+                    int addr_end = query.indexOf("&", addr_start);
+                    if(addr_end == -1){
+                        query.indexOf(" ", addr_start);
+                    }
+                    ring_seconds[1] = query.substring(addr_start, addr_end).toInt();
+                }
+                if(query.indexOf("set_ring3") != 1){
+                    int addr_start = query.indexOf("set_ring3") + 9;
+                    int addr_end = query.indexOf("&", addr_start);
+                    if(addr_end == -1){
+                        query.indexOf(" ", addr_start);
+                    }
+                    ring_seconds[2] = query.substring(addr_start, addr_end).toInt();
+                }
+            }
+
+            Serial.println(F("Sending SET_RING_TIME"));
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:application/json; charset=utf-8\r\nConnection: close\r\n\r\n"));
+
+            client.print(F("{\r\n    \"ring_t\": {\r\n       \"1\": \""));
+            client.print(ring_seconds[0]);
+            client.print(F(",\r\n       \"2\": \""));
+            client.print(ring_seconds[1]);
+            client.print(F(",\r\n       \"3\": \""));
+            client.print(ring_seconds[2]);
+            client.print(F("\r\n    }\r\n}\r\n"));
 
             break;
+
+        case API_ERROR:
+            Serial.println(F("Sending API_ERROR"));
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:application/json; charset=utf-8\r\nConnection: close\r\n\r\n"));
+
+            client.print(F("{\r\n  \"error\" : {\r\n    \"msg\" : \"Invalid requests\"\r\n  }\r\n}\r\n"));
+            break;
+
         case NOT_FOUND:
             Serial.println(F("Sending 404"));
-            client.println(F("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"));
 
+            client.print(F("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"));
+            client.print(F("404 Not Found\r\n"));
             break;
     }
 }

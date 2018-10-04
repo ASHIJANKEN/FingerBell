@@ -7,9 +7,12 @@
 #include <SoftwareSerial.h>
 #include <avr/pgmspace.h>
 
-// // Status number for sendHttpResponse
-#define REQUEST_ROUTER_INFO 0
-#define NOT_FOUND 1
+// Status number for sendHttpResponse
+#define SET_ROUTER_INFO 0
+#define API_RESPONSE    1
+#define SET_RING_TIME   2
+#define API_ERROR       3
+#define NOT_FOUND       4
 
 // Pin assign of a button.
 #define BTN_PIN 12
@@ -116,12 +119,7 @@ void setup(){
     }
 
     // Get SSID and password from EEPROM.
-    for(int i = 0; i < ssid_length; i++){
-        ssid_router[i] = EEPROM.read(SSID_OFFSET + 1 + i) + 0x30;
-    }
-    for(int i = 0; i < password_length; i++){
-        password_router[i] = EEPROM.read(PASSWORD_OFFSET + 1 + i) + 0x30;
-    }
+    ssid_length = EEPROM.read(SSID_OFFSET);
 
     // Disable an internal LED.
     pinMode(13,OUTPUT);
@@ -153,6 +151,42 @@ void loop(){
     }
 
     // Connecting other AP
+    ssid_length = EEPROM.read(SSID_OFFSET);
+    password_length = EEPROM.read(PASSWORD_OFFSET);
+    // Get SSID and password from EEPROM.
+    for(int i = 0; i < ssid_length; i++){
+        ssid_router[i] = EEPROM.read(SSID_OFFSET + 1 + i) + 0x30;
+    }
+    for(int i = 0; i < password_length; i++){
+        password_router[i] = EEPROM.read(PASSWORD_OFFSET + 1 + i) + 0x30;
+    }
+    WiFi.begin(ssid_router, password_router);
+
+    // Start server.
+    server.begin();
+
+    delay(1000);
+
+    // Get IP address
+    IPAddress ap_ip = WiFi.localIP();
+
+    // Show some info
+    Serial.print("SSID: ");
+    Serial.println(ssid_ap);
+    Serial.print("IP Address: ");
+    Serial.println(ap_ip);
+    Serial.println();
+
+    // Show IP address to LCD
+    String ip_str = String(ap_ip[0]) + "." + String(ap_ip[1]) + "." + String(ap_ip[2]) + "." + String(ap_ip[3]);
+    int ip_len = ip_str.length() + 1;
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("ACCESS THIS IP:");
+    lcd.setCursor(0, 1);
+    lcd.print(ip_str);
+
+    delay(10000);
 
     while(1){
         // Set timer to ring the bell.
@@ -261,7 +295,7 @@ bool setRouterConfig(){
 
                     // Respond to request
                     if(query.indexOf("/") != -1 || query.indexOf("/?") != -1) {
-                        sendHttpResponse(client, REQUEST_ROUTER_INFO, query);
+                        sendHttpResponse(client, SET_ROUTER_INFO, query);
                         if(query.indexOf("Set") != -1){
                             set_ssid_password = true;
                         }
@@ -285,8 +319,8 @@ bool setRouterConfig(){
 
 void sendHttpResponse(WiFiEspClient client, int status, String query){
     switch(status){
-        case REQUEST_ROUTER_INFO:
-            Serial.println("Sending REQUEST_ROUTER_INFO");
+        case SET_ROUTER_INFO:
+            Serial.println("Sending SET_ROUTER_INFO");
 
             client.print(F("HTTP/1.1 200 OK\r\n"));
             client.print(F("Content-type:text/html\r\nConnection: close\r\n\r\n"));
@@ -331,12 +365,99 @@ void sendHttpResponse(WiFiEspClient client, int status, String query){
             client.print(F("password : <input type=\"text\" maxlength=\"64\" name='password' required><br>"));
             client.print(F("<input type='submit' name='Set' value='Set'>"));
             client.print(F("</form></body></html>\r\n"));
+            break;
+
+        case API_RESPONSE:{
+            Serial.println(F("Sending API_RESPONSE"));
+            bool send_elapsed_t = false;
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:application/json; charset=utf-8\r\nConnection: close\r\n\r\n"));
+
+            client.print(F("{\r\n"));
+            if(query.indexOf("get_elapsed_t") != -1){
+                send_elapsed_t = true;
+                client.print(F("    \"elapsed_t\": \""));
+                // client.print(args[1]);
+                client.print(1253);
+                client.print(F("\""));
+            }
+
+            if(query.indexOf("get_ring_t") != -1){
+                if(send_elapsed_t == true){
+                    client.print(F(",\r\n"));
+                }
+
+                client.print(F("    \"ring_t\": {\r\n       \"1\": \""));
+                client.print(ring_seconds[0]);
+                client.print(F("\",\r\n       \"2\": \""));
+                client.print(ring_seconds[1]);
+                client.print(F("\",\r\n       \"3\": \""));
+                client.print(ring_seconds[2]);
+                client.print(F("\"\r\n    }"));
+            }
+
+            client.print(F("\r\n}\r\n"));
+            break;
+        }
+        case SET_RING_TIME:
+
+            if(query.indexOf("set_ring") != -1){
+                if(query.indexOf("set_ring1") != 1){
+                    int addr_start = query.indexOf("set_ring1") + 9;
+                    int addr_end = query.indexOf("&", addr_start);
+                    if(addr_end == -1){
+                        query.indexOf(" ", addr_start);
+                    }
+                    ring_seconds[0] = query.substring(addr_start, addr_end).toInt();
+                }
+                if(query.indexOf("set_ring2") != 1){
+                    int addr_start = query.indexOf("set_ring2") + 9;
+                    int addr_end = query.indexOf("&", addr_start);
+                    if(addr_end == -1){
+                        query.indexOf(" ", addr_start);
+                    }
+                    ring_seconds[1] = query.substring(addr_start, addr_end).toInt();
+                }
+                if(query.indexOf("set_ring3") != 1){
+                    int addr_start = query.indexOf("set_ring3") + 9;
+                    int addr_end = query.indexOf("&", addr_start);
+                    if(addr_end == -1){
+                        query.indexOf(" ", addr_start);
+                    }
+                    ring_seconds[2] = query.substring(addr_start, addr_end).toInt();
+                }
+            }
+
+            Serial.println(F("Sending SET_RING_TIME"));
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:application/json; charset=utf-8\r\nConnection: close\r\n\r\n"));
+
+            client.print(F("{\r\n    \"ring_t\": {\r\n       \"1\": \""));
+            client.print(ring_seconds[0]);
+            client.print(F(",\r\n       \"2\": \""));
+            client.print(ring_seconds[1]);
+            client.print(F(",\r\n       \"3\": \""));
+            client.print(ring_seconds[2]);
+            client.print(F("\r\n    }\r\n}\r\n"));
 
             break;
+
+        case API_ERROR:
+            Serial.println(F("Sending API_ERROR"));
+
+            client.print(F("HTTP/1.1 200 OK\r\n"));
+            client.print(F("Content-type:application/json; charset=utf-8\r\nConnection: close\r\n\r\n"));
+
+            client.print(F("{\r\n  \"error\" : {\r\n    \"msg\" : \"Invalid requests\"\r\n  }\r\n}\r\n"));
+            break;
+
         case NOT_FOUND:
             Serial.println(F("Sending 404"));
-            client.println(F("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"));
 
+            client.print(F("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"));
+            client.print(F("404 Not Found\r\n"));
             break;
     }
 }
@@ -353,13 +474,13 @@ void setTimer(){
                                 {0, 0},
                                 {0, 0}};
 
-
     Serial.print(ring_seconds[0]);
     Serial.print(" : ");
     Serial.print(ring_seconds[1]);
     Serial.print(" : ");
     Serial.print(ring_seconds[2]);
     Serial.println(" : ");
+
     while(true){
         // Display setting information on LCD.
         displayInfo(SET_TIMER, ring_seconds);
@@ -399,6 +520,49 @@ void setTimer(){
                     // TODO: Implement preset mode.
                     // Break;
         }
+
+        // Check if a client has connected
+        WiFiEspClient client = server.available();
+        if(!client){
+            continue;
+        }
+
+        Serial.println("New client");
+        char buf[60] = {'\0'};
+        int buf_ptr = 0;
+
+        // Check client is connected
+        bool set_ssid_password = false;
+        while(client.connected()){
+            // Client send request?
+            if(client.available()){
+                buf[buf_ptr] = client.read();
+
+                if(strncmp(buf + buf_ptr - 6, " HTTP/", 6) == 0){
+                    // Read rest of request
+                    while(client.available()){
+                        client.read();
+                    }
+
+                    String query = buf;
+                    Serial.print("query: ");
+                    Serial.println(query);
+
+                    // Respond to request
+                    if(query.indexOf("/?set_") != -1) {
+                        sendHttpResponse(client, SET_RING_TIME, query);
+                    }else{
+                        sendHttpResponse(client, API_ERROR, query);
+                    }
+                    break;
+                }
+
+                buf_ptr++;
+            }
+        }
+        delay(10);
+        client.stop();
+        Serial.println("Done with client");
     }
 }
 
@@ -454,6 +618,49 @@ void startTimer(){
                 }
                 break;
         }
+
+        // Check if a client has connected
+        WiFiEspClient client = server.available();
+        if(!client){
+            continue;
+        }
+
+        Serial.println("New client");
+        char buf[60] = {'\0'};
+        int buf_ptr = 0;
+
+        // Check client is connected
+        bool set_ssid_password = false;
+        while(client.connected()){
+            // Client send request?
+            if(client.available()){
+                buf[buf_ptr] = client.read();
+
+                if(strncmp(buf + buf_ptr - 6, " HTTP/", 6) == 0){
+                    // Read rest of request
+                    while(client.available()){
+                        client.read();
+                    }
+
+                    String query = buf;
+                    Serial.print("query: ");
+                    Serial.println(query);
+
+                    // Respond to request
+                    if(query.indexOf("/?get_") != -1) {
+                        sendHttpResponse(client, API_RESPONSE, query);
+                    }else{
+                        sendHttpResponse(client, API_ERROR, query);
+                    }
+                    break;
+                }
+
+                buf_ptr++;
+            }
+        }
+        delay(10);
+        client.stop();
+        Serial.println("Done with client");
     }
 }
 
