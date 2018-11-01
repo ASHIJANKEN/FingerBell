@@ -42,7 +42,7 @@ void loop() {
     int8_t a = s[i] - 0x30;
     Serial.print(a);
   }
-  
+
   Serial.println("");
   Serial.println("---------");
 
@@ -55,9 +55,8 @@ void loop() {
   Serial.println("");
   Serial.println("---------");
 
-  // Write SSPD and password to EEPROM
-  EEPROM.write(SSID_OFFSET, strlen(ssid));
   // Write SSID and password to EEPROM
+  EEPROM.write(SSID_OFFSET, strlen(ssid));
   for (int i = 0; i < strlen(ssid); i++){
     EEPROM.write(SSID_OFFSET + 1 + i, ssid[i] - 0x30);
   }

@@ -1,19 +1,13 @@
 /*
-    This sketch sends data via HTTP GET requests to data.sparkfun.com service.
-
-    You need to get streamId and privateKey at data.sparkfun.com and paste them
-    below. Or just customize this script to talk to other HTTP servers.
-
-*/
+ *  Simple HTTP get webclient test
+ */
 
 #include <ESP8266WiFi.h>
 
 const char* ssid     = "SSID";
 const char* password = "PASS";
 
-const char* host = "http://s.nezihiko.com/";
-const char* streamId   = "....................";
-const char* privateKey = "....................";
+const char* host = "www.adafruit.com";
 
 void setup() {
   Serial.begin(115200);
@@ -26,10 +20,6 @@ void setup() {
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
-  /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
-     would try to act as both a client and an access-point and could cause
-     network-issues with your other WiFi-devices on your WiFi-network. */
-  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -61,8 +51,7 @@ void loop() {
   }
 
   // We now create a URI for the request
-  String url = "/";
-
+  String url = "/testwifi/index.html";
   Serial.print("Requesting URL: ");
   Serial.println(url);
 
@@ -70,17 +59,10 @@ void loop() {
   client.print(String("GET ") + url + " HTTP/1.1\r\n" +
                "Host: " + host + "\r\n" +
                "Connection: close\r\n\r\n");
-  unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 5000) {
-      Serial.println(">>> Client Timeout !");
-      client.stop();
-      return;
-    }
-  }
+  delay(10);
 
   // Read all the lines of the reply from server and print them to Serial
-  while (client.available()) {
+  while(client.available()){
     String line = client.readStringUntil('\r');
     Serial.print(line);
   }

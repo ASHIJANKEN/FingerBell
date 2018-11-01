@@ -2,6 +2,7 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include <string.h>
 
 // Status number for sendHttpResponse
 #define SET_ROUTER_INFO 0
@@ -11,54 +12,154 @@
 #define NOT_FOUND       4
 
 // Status of Pro Mini
-#define DO_NOTHING -1
 #define SET_ROUTER_CONFIG 0
-#define CONNECT_ROUTER 1
-#define API_SET_TIMER 2
-#define API_RUN_TIMER 3
+#define CONNECT_ROUTER    1
+#define API_SET_TIMER     2
+#define API_RUN_TIMER     3
+
+// Pins for UART communication
+#define UART_SIGNAL_IN 13
+#define UART_SIGNAL_OUT 14
 
 // Pins for reading status of Pro Mini
-#define STATUS_0 5
 #define STATUS_1 4
+#define STATUS_0 5
 
-int status = API_SET_TIMER;
+const char* mdns_local_name = "fingerbell";
+int status = 0;
 
 WiFiServer server(80);
 
 void setup(){
-    pinMode(STATUS_0, INPUT);
+    // Initialize pins
+	pinMode(STATUS_0, INPUT);
     pinMode(STATUS_1, INPUT);
-    Serial.begin(9600);
+    pinMode(UART_SIGNAL_OUT, OUTPUT);
+    pinMode(UART_SIGNAL_IN, INPUT);
+
+	Serial.begin(9600);
+
+    delay(3000);
+
+    status = readProMiniStatus();
 }
 
 void loop(){
+	switch(status){
+		case SET_ROUTER_CONFIG:
+			setRouterConfig();
+			break;
+		case CONNECT_ROUTER:
+			connectRouter();
+			break;
+		case API_SET_TIMER:
+			setTimerApi();
+			break;
+		case API_RUN_TIMER:
+			runTimerApi();
+			break;
+	}
+
+    // Wait until status changes
+    while(readProMiniStatus() == status){
+    }
+    status = readProMiniStatus();
+}
+
+void setRouterConfig(){
     clearSerialBuffer();
 
-    delay(100);
+    char ssid_ap[] = "FingerBell_AP";
+    char password_ap[] = "fingerbell_1234";
+    bool set_ssid_password = false;
 
-    // // Wait for ProMini to send router's info
-    // while(!Serial.available()){
-    // }
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(ssid_ap, password_ap);
 
-    // delay(500);
+    MDNS.begin(mdns_local_name);
 
-    // char buf[150] = {'\0'};
-    // for(int i = 0; Serial.available() > 0; i++){
-    //     buf[i] = Serial.read();
-    // }
+    server.begin();
 
-    // String ssid_str = subString(buf, "SSID:", " ");
-    // String password_str = subString(buf, "PASSWORD:", " ");
+    IPAddress myIP = WiFi.softAPIP();
 
-    // char* ssid = new char[ssid_str.length() + 2];
-    // char* password = new char[password_str.length() + 2];
-    // ssid_str.toCharArray(ssid, ssid_str.length() + 1);
-    // password_str.toCharArray(password, password_str.length() + 1);
+    Serial.println('OK');
+
+    sendUartReady();
+
+    while(true){
+        WiFiClient client = server.available();
+
+        // Client send request?
+        if(!client){
+            continue;
+        }
+
+        while(client.connected()){
+            delay(10);
+            if(client.available() <= 0){
+                continue;
+            }
+
+            char q_char[150] = {'\0'};
+            for(int i = 0; client.available(); i++){
+                q_char[i] = client.read();
+                if(i > 5 && strncmp(q_char + i - 6, " HTTP/", 6) == 0){
+                    break;
+                }
+            }
+            String query = q_char;
+            // Serial.print("query:");
+            // Serial.println(query);
+
+            // Read rest of request
+            while(client.available()){
+                client.read();
+            }
+
+            if(query.indexOf("/") != -1 || query.indexOf("/?") != -1) {
+                sendHttpResponse(client, SET_ROUTER_INFO, q_char);
+                if(query.indexOf("Set") != -1){
+                    set_ssid_password = true;
+                }
+            }else{
+                sendHttpResponse(client, NOT_FOUND, q_char);
+            }
+            break;
+        }
+
+        // delay(10);
+        client.stop();
+        // Serial.println(F("Done with client"));
+        if(set_ssid_password == true){
+            return;
+        }
+    }
+}
+
+void connectRouter(){
+    clearSerialBuffer();
+
+    // Wait for ProMini to send router's info
+    waitUartReceive();
+
+    char buf[150] = {'\0'};
+    for(int i = 0; Serial.available() > 0; i++){
+        buf[i] = Serial.read();
+    }
+    String s = buf;
+
+    String ssid_str = subString(buf, "SSID:", " ");
+    String password_str = subString(buf, "PASSWORD:", " ");
+
+    char* ssid = new char[ssid_str.length() + 2];
+    char* password = new char[password_str.length() + 2];
+    ssid_str.toCharArray(ssid, ssid_str.length() + 1);
+    password_str.toCharArray(password, password_str.length() + 1);
 
     WiFi.mode(WIFI_STA);
-    WiFi.begin("SSID", "PASS");
+    WiFi.begin(ssid, password);
 
-    MDNS.begin("fingerbell");
+    MDNS.begin(mdns_local_name);
 
     // Start server.
     server.begin();
@@ -66,29 +167,65 @@ void loop(){
     // Notify ProMini that esp is ready
     Serial.println("OK");
 
-    status = DO_NOTHING;
+    sendUartReady();
+}
 
-
-
-
-
-
-
-    status = API_SET_TIMER;
-
-
-
-    Serial.println("set timer");
-
-
-
-
+void setTimerApi(){
     clearSerialBuffer();
     delay(100);
 
     while(1){
-        readProMiniStatus();
-        if(status != API_RUN_TIMER){
+        if(readProMiniStatus() != API_SET_TIMER){
+            return;
+        }
+
+        // Check if a client has connected
+        WiFiClient client = server.available();
+        if(!client){
+            continue;
+        }
+
+        // Check client is connected
+        while(client.connected()){
+            delay(10);
+            // Client send request?
+            if(client.available() <= 0){
+                continue;
+            }
+
+            char buf[100] = {'\0'};
+            for(int i = 0; client.available(); i++){
+                buf[i] = client.read();
+                if(i > 5 && strncmp(buf + i - 6, " HTTP/", 6) == 0){
+                    break;
+                }
+            }
+
+            // Read rest of request
+            while(client.available()){
+                client.read();
+            }
+
+            String query = buf;
+
+            // Respond to request
+            if(query.indexOf("/?set_ring") != -1) {
+                sendHttpResponse(client, SET_RING_TIME, buf);
+            }else{
+                sendHttpResponse(client, API_ERROR, buf);
+            }
+            break;
+        }
+        delay(10);
+        client.stop();
+    }
+}
+
+void runTimerApi(){
+    clearSerialBuffer();
+
+    while(1){
+        if(readProMiniStatus() != API_RUN_TIMER){
             return;
         }
 
@@ -134,16 +271,14 @@ void loop(){
     }
 }
 
-void readProMiniStatus(){
-    status = (digitalRead(STATUS_1) << 1) | digitalRead(STATUS_0);
+int readProMiniStatus(){
+	return (digitalRead(STATUS_1) << 1) | digitalRead(STATUS_0);
 }
 
 void sendHttpResponse(WiFiClient client, int status, char* query){
     switch(status){
         case SET_ROUTER_INFO:{
             // Sending SET_ROUTER_INFO
-
-            Serial.println("SET_ROUTER_INFO");
 
             client.print(F("HTTP/1.1 200 OK\r\n"));
             client.print(F("Content-type:text/html\r\nConnection: close\r\n\r\n"));
@@ -161,7 +296,9 @@ void sendHttpResponse(WiFiClient client, int status, char* query){
                 Serial.print(ssid);
                 Serial.print(" password:");
                 Serial.print(password);
-                Serial.println(" ");
+                Serial.print(" ");
+
+                sendUartReady();
 
                 client.println(F("Done.<br>"));
             }
@@ -184,12 +321,11 @@ void sendHttpResponse(WiFiClient client, int status, char* query){
 
             String query_str = query;
             if(query_str.indexOf("get_elapsed_t") != -1 || query_str.indexOf("get_ring_t") != -1){
-                Serial.println("res");
+                Serial.print("res");
 
-                while(!Serial.available()){
-                }
+                sendUartReady();
 
-                delay(100);
+                waitUartReceive();
 
                 char buf[70];
                 for(int i = 0; Serial.available() > 0; i++){
@@ -229,6 +365,7 @@ void sendHttpResponse(WiFiClient client, int status, char* query){
 
             client.print(F("\r\n}\r\n"));
             break;
+
         }
         case SET_RING_TIME:{
             // Sending SET_RING_TIME
@@ -251,12 +388,8 @@ void sendHttpResponse(WiFiClient client, int status, char* query){
                     Serial.print(" ");
                 }
             }
-            Serial.println();
 
-            while(!Serial.available()){
-            }
-
-            delay(100);
+            sendUartReady();
 
             char buf[70];
             for(int i = 0; Serial.available() > 0; i++){
@@ -367,14 +500,48 @@ String urldecode(String str){
 }
 
 unsigned char h2int(char c){
-    if (c >= '0' && c <='9'){
-        return((unsigned char)c - '0');
+    if(c >= '0' && c <='9'){
+        return ((unsigned char)c - '0');
     }
-    if (c >= 'a' && c <='f'){
-        return((unsigned char)c - 'a' + 10);
+    if(c >= 'a' && c <='f'){
+        return ((unsigned char)c - 'a' + 10);
     }
-    if (c >= 'A' && c <='F'){
-        return((unsigned char)c - 'A' + 10);
+    if(c >= 'A' && c <='F'){
+        return ((unsigned char)c - 'A' + 10);
     }
-    return(0);
+    return 0;
+}
+
+/* Send 'ready' status.
+ * 1. Send UART_SIGNAL_OUT to notify that strings are already printed.
+ * 2. UART_SIGNAL_IN goes to be high as an ProMini's ack after detecting UART_SIGNAL_OUT signal.
+ * 3. Disable UART_SIGNAL_OUT signal.
+ * 4. Make sure ProMini's signal goes to be low.
+ */
+void  sendUartReady(){
+    digitalWrite(UART_SIGNAL_OUT, HIGH);
+
+    while(digitalRead(UART_SIGNAL_IN) == LOW){
+    }
+
+    digitalWrite(UART_SIGNAL_OUT, LOW);
+
+    while(digitalRead(UART_SIGNAL_IN) == HIGH){
+    }
+}
+
+/* Wait for ProMini to be ready to send data.
+ * 1. Wait for ProMini's signal to be high.
+ * 2. Send UART_SIGNAL_OUT as an ack.
+ * 3. Wait for ProMini's signal goes to be low.
+ * 4. Disable UART_SIGNAL_OUT.
+ */
+void waitUartReceive(){
+    while(digitalRead(UART_SIGNAL_IN) != HIGH){
+    }
+    digitalWrite(UART_SIGNAL_OUT, HIGH);
+
+    while(digitalRead(UART_SIGNAL_IN) == HIGH){
+    }
+    digitalWrite(UART_SIGNAL_OUT, LOW);
 }
