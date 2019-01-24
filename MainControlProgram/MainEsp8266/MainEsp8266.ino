@@ -60,8 +60,11 @@ void loop(){
 			break;
 	}
 
+    delay(50);
+
     // Wait until status changes
     while(readProMiniStatus() == status){
+        delay(50);
     }
     status = readProMiniStatus();
 }
@@ -290,7 +293,9 @@ void sendHttpResponse(WiFiClient client, int status, char* query){
             String query_str = query;
             if(query_str.indexOf("Set") != -1){
                 String ssid = subString(query, "ssid=", "&");
-                String password = subString(query, "password=", "&");
+                // String ssid = query;
+                String password = subString(query, "word=", "&");
+                // String password = subString(query, "password=", "&");
 
                 Serial.print("SSID:");
                 Serial.print(ssid);
@@ -301,12 +306,13 @@ void sendHttpResponse(WiFiClient client, int status, char* query){
                 sendUartReady();
 
                 client.println(F("Done.<br>"));
+            }else{
+                client.print(F("<form>SSID : <input type=\"text\" maxlength=\"32\" name='ssid' required><br>"));
+                client.print(F("password : <input type=\"text\" maxlength=\"64\" name='password' required><br>"));
+                client.print(F("<input type='submit' name='Set' value='Set'></form>"));
             }
 
-            client.print(F("<form>SSID : <input type=\"text\" maxlength=\"32\" name='ssid' required><br>"));
-            client.print(F("password : <input type=\"text\" maxlength=\"64\" name='password' required><br>"));
-            client.print(F("<input type='submit' name='Set' value='Set'>"));
-            client.print(F("</form></body></html>\r\n"));
+            client.print(F("</body></html>\r\n"));
             break;
         }
         case API_RESPONSE:{

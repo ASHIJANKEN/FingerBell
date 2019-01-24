@@ -8,4 +8,5 @@ void setup(){
 void loop(){
 	Serial.print("Val: ");
 	Serial.println(analogRead(READ_PIN));
+    delay(100);
 }

@@ -40,8 +40,8 @@
 #define UART_SIGNAL_OUT A3
 
 // Pins for sending status to esp8266
-#define STATUS_1 A4
-#define STATUS_0 A5
+#define STATUS_1 A6
+#define STATUS_0 A7
 
 //Button state
 #define NOT_PRESSED         0
@@ -74,7 +74,7 @@ char ssid[40] = {'\0'};
 char password[70] = {'\0'};
 
 // Serial port for ESP-WROOM-02
-SoftwareSerial Serial1(A6, A7); // RX, TX
+SoftwareSerial Serial1(A4, A5); // RX, TX
 
 // Create objects.
 LiquidCrystal lcd(RS, ENABLE, DB4, DB5, DB6, DB7);
@@ -140,6 +140,8 @@ void setup(){
     pinMode(SERVO_PIN,OUTPUT);
 
     lcd.clear();
+
+    delay(5000);
 }
 
 void loop(){
@@ -180,6 +182,13 @@ bool setRouterConfig(){
 
     // Wait for ESP8266 to be ready to send data
     waitUartReceive();
+    int bufnum = Serial1.available();
+    Serial.print("bufnum:");
+    Serial.println(bufnum);
+    for(int i = 0; i < bufnum; i++){
+        Serial.print((char)Serial1.read());
+    }
+    Serial.println();
     clearSerialBuffer();
 
     // Show some info
@@ -190,33 +199,39 @@ bool setRouterConfig(){
     unsigned long st = millis();
     int lcd_state = 0;
     while(1){
-
         //Display info to lcd
-        switch(((millis() - st) % 3000) / 1000){
+        switch(((millis() - st) % 15000) / 5000){
         case 0:
             if(lcd_state != 0){
                 lcd.clear();
+                lcd_state = 0;
+
             }
             lcd.setCursor(0, 0);
             lcd.print("SSID:");
             lcd.setCursor(0, 1);
             lcd.print("FingerBell_AP");
+            break;
         case 1:
-            if(lcd_state != 0){
+            if(lcd_state != 1){
                 lcd.clear();
+                lcd_state = 1;
             }
             lcd.setCursor(0, 0);
             lcd.print("PASSWORD:");
             lcd.setCursor(0, 1);
             lcd.print("FingerBell_1234");
+            break;
         case 2:
-            if(lcd_state != 0){
+            if(lcd_state != 2){
                 lcd.clear();
+                lcd_state = 2;
             }
             lcd.setCursor(0, 0);
             lcd.print("URL: http://");
             lcd.setCursor(0, 1);
             lcd.print("fingerbell.local");
+            break;
         }
 
         // Check Serial1
@@ -601,7 +616,7 @@ void ringBell(int times){
 int detectBtnStat(){
     static bool is_long = false; // Manage the button long pressing
     static int old_btn_val = digitalRead(BTN_PIN); // The button's previous state.
-    static unsigned long pressed_time = 0;           // Time when the button pressed.
+    static unsigned long pressed_time = millis();           // Time when the button pressed.
     int button_state = NOT_PRESSED;
 
     int btn_val = digitalRead(BTN_PIN);
@@ -652,10 +667,13 @@ int detectBtnStat(){
 }
 
 void sendProMiniStatus(int status){
-    uint8_t portc = PORTC;
-    PORTC = (portc & 0b11000111)
-            | (status & 1) << 5
-            | ((status >> 1) & 1) << 4;
+    analogWrite(A6, ((status >> 1) & 1) * 255);
+    analogWrite(A7, (status & 1) * 255);
+
+    // uint8_t portc = PORTC;
+    // PORTC = (portc & 0b11000111)
+    //         | (status & 1) << 5
+    //         | ((status >> 1) & 1) << 4;
 }
 
 void clearSerialBuffer(){
@@ -675,9 +693,9 @@ String subString(char* buf, char* start_tag, char* end_tag){
 
     int start = start_indexof + strlen(start_tag);
     int length = end - start;
-    Serial.println(start);
-    Serial.println(end);
-    Serial.println(length);
+    // Serial.println(start);
+    // Serial.println(end);
+    // Serial.println(length);
     char* ret = new char[length];
 
     strncpy(ret, buf + start, length);
