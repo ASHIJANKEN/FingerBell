@@ -1,0 +1,82 @@
+
+ ets Jan  8 2013,rst cause:2, boot mode:(3,6)
+
+load 0x40100000, len 2592, room 16
+tail 0
+chksum 0xf3
+load 0x3ffe8000, len 764, room 8
+tail 4
+chksum 0x92
+load 0x3ffe82fc, len 676, room 4
+tail 0
+chksum 0x22
+csum 0x22
+
+2nd boot version : 1.7(5d6f877)
+SPI Speed : 40MHz
+SPI Mode : QIO
+SPI Flash Size & Map: 16Mbit(512KB+512KB)
+jump to run user1 @ 1000
+
+mismatch map 5,spi_size_map 3
+system_partition_table_regist fail
+
+
+
+
+
+
+
+
+--------
+
+
+
+
+
+
+
+
+ ets Jan  8 2013,rst cause:2, boot mode:(3,7)
+
+load 0x40100000, len 816, room 16
+tail 0
+chksum 0x8d
+load 0x3ffe8000, len 788, room 8
+tail 12
+chksum 0xcf
+ho 0 tail 12 room 4
+load 0x3ffe8314, len 288, room 12
+tail 4
+chksum 0xcf
+csum 0xcf
+
+2nd boot version : 1.2
+  SPI Speed      : 40MHz
+  SPI Mode       : QIO
+  SPI Flash Size : 4Mbit
+jump to run user1
+
+>> 0x⸮
+
+
+
+
+
+
+--------
+
+
+
+
+
+
+AT
+
+OK
+AT+GMR
+AT version:1.7.0.0(Aug 16 2018 00:57:04)
+SDK version:3.0.0(d49923c)
+compile time:Aug 23 2018 16:58:12
+Bin version(Wroom 02):v1.7.0
+OK
